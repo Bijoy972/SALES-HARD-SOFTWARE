@@ -1,0 +1,28 @@
+{
+  "name": "bijoy-sales",
+  "private": true,
+  "version": "1.0.0",
+  "description": "BIJOY PRODUCTION — Android billing & inventory app (offline, multi-company, GST-aware).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "sync": "npm run build && cap sync android",
+    "cap:add": "cap add android",
+    "cap:open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/filesystem": "^6.0.1",
+    "@capacitor/share": "^6.0.2",
+    "dexie": "^4.0.8",
+    "pdfmake": "^0.2.10"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "vite": "^5.4.8"
+  }
+}

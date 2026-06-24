@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BIJOY PRODUCTION</string>
+    <string name="title_activity_main">BIJOY PRODUCTION</string>
+    <string name="package_name">com.bijoy.production</string>
+    <string name="custom_url_scheme">com.bijoy.production</string>
+</resources>
