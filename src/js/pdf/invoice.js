@@ -2,35 +2,34 @@
 // pdfmake is loaded lazily (only when needed) to keep first paint fast.
 import { splitTax, summary } from './gst.js';
 import { INR, NUM, fmtDate, amountInWords } from '../utils/format.js';
-import { DBG } from '../utils/share.js';
 
 let pdfMakePromise = null;
 async function loadPdfMake() {
   if (pdfMakePromise) return pdfMakePromise;
   pdfMakePromise = (async () => {
-    DBG('pdfmake: importing modules...');
     const [{ default: pdfMake }, fontsMod] = await Promise.all([
       import('pdfmake/build/pdfmake'),
       import('pdfmake/build/vfs_fonts'),
     ]);
-    DBG('pdfmake: imported, has .vfs=' + !!pdfMake.vfs + ' fontsMod keys=' + Object.keys(fontsMod || {}).join(','));
+    // vfs_fonts in this bundled form exports the font dict at the top
+    // level — TTF filenames are keys, not nested under .vfs. Old
+    // resolvers that looked for fontsMod.default.vfs found nothing and
+    // pdfmake silently hung on font lookup. Probe each candidate for a
+    // real Roboto-Regular.ttf entry.
     const candidates = [
       pdfMake.vfs,
       fontsMod && fontsMod.default,
       fontsMod,
       fontsMod && fontsMod.pdfMake && fontsMod.pdfMake.vfs,
-      fontsMod && fontsMod.default && fontsMod.default.pdfMake && fontsMod.default.pdfMake.vfs,
-      fontsMod && fontsMod.default && fontsMod.default.vfs,
     ];
-    let vfs = null;
     for (const cand of candidates) {
       if (cand && typeof cand === 'object' && cand['Roboto-Regular.ttf']) {
-        vfs = cand;
+        pdfMake.vfs = cand;
         break;
       }
     }
-    DBG('pdfmake: vfs resolved=' + !!vfs + (vfs ? ' keys#=' + Object.keys(vfs).length : ''));
-    if (vfs) pdfMake.vfs = vfs;
+    // Bundled pdfmake does not auto-set this from vfs — without it the
+    // layout engine cannot resolve the Roboto family and getBlob hangs.
     pdfMake.fonts = {
       Roboto: {
         normal: 'Roboto-Regular.ttf',
@@ -39,7 +38,6 @@ async function loadPdfMake() {
         bolditalics: 'Roboto-MediumItalic.ttf',
       },
     };
-    DBG('pdfmake: fonts set, vfs has Regular=' + !!(pdfMake.vfs && pdfMake.vfs['Roboto-Regular.ttf']));
     return pdfMake;
   })();
   return pdfMakePromise;
@@ -368,30 +366,25 @@ export async function buildInvoicePdf(sale, company) {
   };
 
   const pdfMake = await loadPdfMake();
-  DBG('pdfmake: loaded, calling createPdf...');
   return new Promise((resolve, reject) => {
     let done = false;
     const watchdog = setTimeout(() => {
       if (done) return;
       done = true;
-      DBG('pdfmake: WATCHDOG 20s — no callback');
-      reject(new Error('pdfmake getBlob timed out'));
+      reject(new Error('PDF generation timed out'));
     }, 20000);
     try {
       const doc = pdfMake.createPdf(docDef);
-      DBG('pdfmake: createPdf returned, calling getBlob...');
       doc.getBlob((blob) => {
         if (done) return;
         done = true;
         clearTimeout(watchdog);
-        DBG('pdfmake: getBlob CB blob.size=' + (blob && blob.size != null ? blob.size : 'null'));
         resolve(blob);
       });
     } catch (e) {
       if (done) return;
       done = true;
       clearTimeout(watchdog);
-      DBG('pdfmake: createPdf/getBlob THROW=' + (e && e.message ? e.message : e));
       reject(e);
     }
   });
