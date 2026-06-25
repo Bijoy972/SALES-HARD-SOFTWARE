@@ -2,23 +2,25 @@
 // pdfmake is loaded lazily (only when needed) to keep first paint fast.
 import { splitTax, summary } from './gst.js';
 import { INR, NUM, fmtDate, amountInWords } from '../utils/format.js';
+import { DBG } from '../utils/share.js';
 
 let pdfMakePromise = null;
 async function loadPdfMake() {
   if (pdfMakePromise) return pdfMakePromise;
   pdfMakePromise = (async () => {
+    DBG('pdfmake: importing modules...');
     const [{ default: pdfMake }, fontsMod] = await Promise.all([
       import('pdfmake/build/pdfmake'),
       import('pdfmake/build/vfs_fonts'),
     ]);
-    // pdfmake vfs_fonts is a side-effect module that attaches to pdfMake.
-    // Different versions expose it differently — handle both.
+    DBG('pdfmake: imported, has .vfs=' + !!pdfMake.vfs + ' fontsMod keys=' + Object.keys(fontsMod || {}).join(','));
     const vfs =
       pdfMake.vfs ||
       fontsMod.pdfMake?.vfs ||
       fontsMod.default?.pdfMake?.vfs ||
       fontsMod.default?.vfs ||
       null;
+    DBG('pdfmake: vfs resolved=' + !!vfs + (vfs ? ' keys#=' + Object.keys(vfs).length : ''));
     if (vfs) pdfMake.vfs = vfs;
     return pdfMake;
   })();
@@ -348,11 +350,23 @@ export async function buildInvoicePdf(sale, company) {
   };
 
   const pdfMake = await loadPdfMake();
+  DBG('pdfmake: loaded, calling createPdf...');
   return new Promise((resolve, reject) => {
     try {
       const doc = pdfMake.createPdf(docDef);
-      doc.getBlob((blob) => resolve(blob));
+      DBG('pdfmake: createPdf returned, calling getBlob...');
+      doc.getBlob(
+        (blob) => {
+          DBG('pdfmake: getBlob CB blob.size=' + (blob && blob.size != null ? blob.size : 'null'));
+          resolve(blob);
+        },
+        (err) => {
+          DBG('pdfmake: getBlob ERR=' + (err && err.message ? err.message : err));
+          reject(err);
+        },
+      );
     } catch (e) {
+      DBG('pdfmake: createPdf/getBlob THROW=' + (e && e.message ? e.message : e));
       reject(e);
     }
   });
