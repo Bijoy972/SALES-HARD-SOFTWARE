@@ -7,7 +7,7 @@ import { INR, NUM, fmtDate } from '../utils/format.js';
 import { t } from '../i18n.js';
 import { todayISO } from '../utils/fy.js';
 import { buildInvoicePdf } from '../pdf/invoice.js';
-import { saveAndShareBlob } from '../utils/share.js';
+import { saveAndShareBlob, DBG } from '../utils/share.js';
 
 // ---------- List ----------
 export async function renderList(root) {
@@ -706,8 +706,11 @@ export async function renderDetail(root, id) {
         {
           class: 'btn btn-primary flex-1',
           onclick: async () => {
+            DBG('btn click: Share PDF for ' + s.invoiceNo);
             try {
+              DBG('calling buildInvoicePdf...');
               const blob = await buildInvoicePdf(s, co);
+              DBG('blob ready, size=' + (blob && blob.size != null ? blob.size : 'null'));
               await saveAndShareBlob(
                 blob,
                 'invoice-' + s.invoiceNo.replace(/\//g, '-') + '.pdf',
@@ -715,6 +718,7 @@ export async function renderDetail(root, id) {
               );
             } catch (e) {
               console.error(e);
+              DBG('FATAL handler error: ' + (e && e.message ? e.message : e) + ' | stack=' + (e && e.stack ? e.stack.split('\n')[0] : 'n/a'));
               toast('PDF error: ' + (e.message || e), 'err');
             }
           },
