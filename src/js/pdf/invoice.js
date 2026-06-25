@@ -31,6 +31,15 @@ async function loadPdfMake() {
     }
     DBG('pdfmake: vfs resolved=' + !!vfs + (vfs ? ' keys#=' + Object.keys(vfs).length : ''));
     if (vfs) pdfMake.vfs = vfs;
+    pdfMake.fonts = {
+      Roboto: {
+        normal: 'Roboto-Regular.ttf',
+        bold: 'Roboto-Medium.ttf',
+        italics: 'Roboto-Italic.ttf',
+        bolditalics: 'Roboto-MediumItalic.ttf',
+      },
+    };
+    DBG('pdfmake: fonts set, vfs has Regular=' + !!(pdfMake.vfs && pdfMake.vfs['Roboto-Regular.ttf']));
     return pdfMake;
   })();
   return pdfMakePromise;
@@ -361,20 +370,27 @@ export async function buildInvoicePdf(sale, company) {
   const pdfMake = await loadPdfMake();
   DBG('pdfmake: loaded, calling createPdf...');
   return new Promise((resolve, reject) => {
+    let done = false;
+    const watchdog = setTimeout(() => {
+      if (done) return;
+      done = true;
+      DBG('pdfmake: WATCHDOG 20s — no callback');
+      reject(new Error('pdfmake getBlob timed out'));
+    }, 20000);
     try {
       const doc = pdfMake.createPdf(docDef);
       DBG('pdfmake: createPdf returned, calling getBlob...');
-      doc.getBlob(
-        (blob) => {
-          DBG('pdfmake: getBlob CB blob.size=' + (blob && blob.size != null ? blob.size : 'null'));
-          resolve(blob);
-        },
-        (err) => {
-          DBG('pdfmake: getBlob ERR=' + (err && err.message ? err.message : err));
-          reject(err);
-        },
-      );
+      doc.getBlob((blob) => {
+        if (done) return;
+        done = true;
+        clearTimeout(watchdog);
+        DBG('pdfmake: getBlob CB blob.size=' + (blob && blob.size != null ? blob.size : 'null'));
+        resolve(blob);
+      });
     } catch (e) {
+      if (done) return;
+      done = true;
+      clearTimeout(watchdog);
       DBG('pdfmake: createPdf/getBlob THROW=' + (e && e.message ? e.message : e));
       reject(e);
     }
