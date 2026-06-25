@@ -68,6 +68,7 @@ export async function create(companyId, data, opts = {}) {
         paid,
         status,
         paymentMethod: data.paymentMethod || 'cash',
+        saleType: data.saleType || (paid >= total - 0.01 ? 'cash' : 'credit'),
         notes: data.notes || '',
         createdAt: Date.now(),
       });

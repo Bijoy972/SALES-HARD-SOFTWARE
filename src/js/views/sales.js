@@ -90,9 +90,11 @@ export async function renderNew(root) {
     placeOfSupplyStateCode: co.stateCode || '',
     date: todayISO(),
     discount: 0,
+    discountUnit: 'flat', // 'flat' (₹) or 'pct' (%)
     roundOff: 0,
     paid: 0,
     paymentMethod: 'cash',
+    saleType: 'cash', // 'cash' (paid in full) or 'credit' (paid = 0, balance due)
     notes: '',
     items: [emptyLine()],
   };
@@ -124,21 +126,45 @@ export async function renderNew(root) {
   const totalsHost = h('div', { class: 'totals-grid' });
   root.appendChild(totalsHost);
 
-  // Extra fields
+  // Extra fields — discount with ₹/% toggle + round-off
   root.appendChild(
     h('div', { class: 'field row-2', style: { marginTop: '8px' } }, [
       h('div', { class: 'field' }, [
         h('label', {}, t('sale.discount')),
-        h('input', {
-          id: 's-discount',
-          type: 'number',
-          step: '0.01',
-          value: 0,
-          oninput: (e) => {
-            state.discount = Number(e.target.value) || 0;
-            recompute();
-          },
-        }),
+        h('div', { class: 'input-with-toggle' }, [
+          h('input', {
+            id: 's-discount',
+            type: 'number',
+            step: '0.01',
+            value: 0,
+            oninput: (e) => {
+              state.discount = Number(e.target.value) || 0;
+              recompute();
+            },
+          }),
+          h('div', { class: 'unit-toggle', role: 'group' }, [
+            h(
+              'button',
+              {
+                type: 'button',
+                id: 's-disc-flat',
+                class: 'unit-btn active',
+                onclick: () => setDiscountUnit('flat'),
+              },
+              '₹',
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                id: 's-disc-pct',
+                class: 'unit-btn',
+                onclick: () => setDiscountUnit('pct'),
+              },
+              '%',
+            ),
+          ]),
+        ]),
       ]),
       h('div', { class: 'field' }, [
         h('label', {}, t('sale.roundOff')),
@@ -152,6 +178,35 @@ export async function renderNew(root) {
             recompute();
           },
         }),
+      ]),
+    ]),
+  );
+
+  // Cash / Credit sale-type pill toggle
+  root.appendChild(
+    h('div', { class: 'field' }, [
+      h('label', {}, t('sale.saleType')),
+      h('div', { class: 'pill-toggle' }, [
+        h(
+          'button',
+          {
+            type: 'button',
+            id: 's-type-cash',
+            class: 'pill active',
+            onclick: () => setSaleType('cash'),
+          },
+          '💵 ' + t('sale.cash'),
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            id: 's-type-credit',
+            class: 'pill',
+            onclick: () => setSaleType('credit'),
+          },
+          '📒 ' + t('sale.credit'),
+        ),
       ]),
     ]),
   );
@@ -189,6 +244,34 @@ export async function renderNew(root) {
     ]),
   );
 
+  function setDiscountUnit(unit) {
+    state.discountUnit = unit;
+    const flat = document.getElementById('s-disc-flat');
+    const pct = document.getElementById('s-disc-pct');
+    if (flat && pct) {
+      flat.classList.toggle('active', unit === 'flat');
+      pct.classList.toggle('active', unit === 'pct');
+    }
+    recompute();
+  }
+
+  function setSaleType(type) {
+    state.saleType = type;
+    const cashBtn = document.getElementById('s-type-cash');
+    const credBtn = document.getElementById('s-type-credit');
+    if (cashBtn && credBtn) {
+      cashBtn.classList.toggle('active', type === 'cash');
+      credBtn.classList.toggle('active', type === 'credit');
+    }
+    const grand = currentGrand();
+    const paidInput = document.getElementById('s-paid');
+    if (paidInput) {
+      const newPaid = type === 'cash' ? grand : 0;
+      state.paid = newPaid;
+      paidInput.value = String(newPaid.toFixed(2));
+    }
+  }
+
   root.appendChild(
     h('div', { class: 'field' }, [
       h('label', {}, t('sale.notes')),
@@ -213,6 +296,16 @@ export async function renderNew(root) {
             toast('Add at least one line item', 'err');
             return;
           }
+          // Resolve discount unit → flat ₹ before persisting
+          const subtotalCalc = itemsValid.reduce((s, i) => {
+            const gross = (Number(i.qty) || 0) * (Number(i.rate) || 0);
+            const taxable = gross - gross * ((Number(i.discountPct) || 0) / 100);
+            return s + taxable + taxable * ((Number(i.gstPct) || 0) / 100);
+          }, 0);
+          const discFlat =
+            state.discountUnit === 'pct'
+              ? subtotalCalc * ((Number(state.discount) || 0) / 100)
+              : Number(state.discount) || 0;
           const saleData = {
             partyId: state.partyId,
             partyName: state.partyName || 'Cash',
@@ -225,10 +318,11 @@ export async function renderNew(root) {
             placeOfSupplyStateCode: state.placeOfSupplyStateCode,
             date: state.date,
             items: itemsValid,
-            discount: state.discount,
+            discount: discFlat,
             roundOff: state.roundOff,
-            paid: state.paid,
+            paid: state.saleType === 'credit' ? 0 : state.paid,
             paymentMethod: state.paymentMethod,
+            saleType: state.saleType,
             notes: state.notes,
           };
           try {
@@ -367,25 +461,45 @@ export async function renderNew(root) {
     }
   }
 
-  function recompute() {
-    const subtotal = state.items.reduce(
-      (s, i) => s + lineTaxable(i),
-      0,
-    );
+  function discountAmount(beforeDisc) {
+    const d = Number(state.discount) || 0;
+    return state.discountUnit === 'pct' ? beforeDisc * (d / 100) : d;
+  }
+
+  function currentGrand() {
+    const subtotal = state.items.reduce((s, i) => s + lineTaxable(i), 0);
     const taxTotal = state.items.reduce((s, i) => s + lineTax(i), 0);
-    const grand = subtotal + taxTotal - (state.discount || 0) + (state.roundOff || 0);
+    const beforeDisc = subtotal + taxTotal;
+    return beforeDisc - discountAmount(beforeDisc) + (Number(state.roundOff) || 0);
+  }
+
+  function recompute() {
+    const subtotal = state.items.reduce((s, i) => s + lineTaxable(i), 0);
+    const taxTotal = state.items.reduce((s, i) => s + lineTax(i), 0);
+    const beforeDisc = subtotal + taxTotal;
+    const discAmt = discountAmount(beforeDisc);
+    const grand = beforeDisc - discAmt + (Number(state.roundOff) || 0);
     clear(totalsHost);
     totalsHost.appendChild(h('div', { class: 'lbl' }, t('sale.subtotal')));
     totalsHost.appendChild(h('div', { class: 'val mono' }, NUM(subtotal, 2)));
     totalsHost.appendChild(h('div', { class: 'lbl' }, t('sale.tax')));
     totalsHost.appendChild(h('div', { class: 'val mono' }, NUM(taxTotal, 2)));
+    if (discAmt > 0) {
+      totalsHost.appendChild(h('div', { class: 'lbl' }, t('sale.discount')));
+      totalsHost.appendChild(h('div', { class: 'val mono' }, '-' + NUM(discAmt, 2)));
+    }
     totalsHost.appendChild(h('div', { class: 'lbl grand' }, t('sale.grandTotal')));
     totalsHost.appendChild(h('div', { class: 'val mono grand' }, INR(grand)));
-    // refresh per-line amounts
     state.items.forEach((it, idx) => {
       const cell = document.getElementById('amt-' + idx);
       if (cell) cell.textContent = NUM(lineAmount(it), 2);
     });
+    // Auto-sync paid amount when in cash mode
+    if (state.saleType === 'cash') {
+      state.paid = grand;
+      const paidInput = document.getElementById('s-paid');
+      if (paidInput) paidInput.value = String(grand.toFixed(2));
+    }
   }
 }
 

@@ -1,6 +1,7 @@
-// Save a PDF blob to device storage (using Capacitor Filesystem when available)
-// and offer it via the Android share sheet. In a web preview, falls back to a
-// download anchor.
+// Save a PDF/JSON blob and offer it via the Android share sheet.
+// On Android, Capacitor's Share.share({ files: [...] }) routes the file:// URI
+// through FileProvider automatically, avoiding FileUriExposedException.
+// Writes go to the Cache directory so no storage permission is required.
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -11,7 +12,6 @@ function blobToBase64(blob) {
     fr.onerror = reject;
     fr.onload = () => {
       const s = String(fr.result || '');
-      // strip "data:...;base64," prefix
       const idx = s.indexOf(',');
       resolve(idx >= 0 ? s.slice(idx + 1) : s);
     };
@@ -25,21 +25,21 @@ export async function saveAndShareBlob(blob, filename, dialogTitle = 'Share') {
     const writeRes = await Filesystem.writeFile({
       path: filename,
       data,
-      directory: Directory.Documents,
+      directory: Directory.Cache,
       recursive: true,
     });
     try {
       await Share.share({
         title: dialogTitle,
-        url: writeRes.uri,
         dialogTitle,
+        files: [writeRes.uri],
       });
     } catch (e) {
-      // user cancelled — that's fine
+      const msg = String(e?.message || e || '');
+      if (!/cancel/i.test(msg)) throw e;
     }
     return writeRes.uri;
   }
-  // Web fallback
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

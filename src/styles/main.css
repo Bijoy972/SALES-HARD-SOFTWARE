@@ -763,3 +763,61 @@ body[data-theme="light"] .appbar {
 body[data-theme="light"] .bottom-nav {
   background: rgba(255, 255, 255, 0.92);
 }
+
+/* ---------- Input + unit toggle (₹ / %) ---------- */
+.input-with-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.input-with-toggle input {
+  flex: 1;
+  min-width: 0;
+}
+.unit-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-2);
+}
+.unit-btn {
+  background: transparent;
+  border: 0;
+  color: var(--text-soft);
+  padding: 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 36px;
+}
+.unit-btn.active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.unit-btn + .unit-btn {
+  border-left: 1px solid var(--line);
+}
+
+/* ---------- Pill toggle (Cash / Credit) ---------- */
+.pill-toggle {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.pill {
+  flex: 1;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--text-soft);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pill.active {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--line-soft);
+}
