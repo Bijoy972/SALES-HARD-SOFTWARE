@@ -101,8 +101,14 @@ export async function renderNew(root) {
 
   root.appendChild(h('h1', {}, t('sale.new')));
 
-  // Customer + date strip
-  root.appendChild(buildHeaderStrip(state, allCustomers, () => recompute()));
+  // Customer + date strip — onPartyKind('cash'|'credit'|'named') fires when
+  // the picker changes so we can auto-switch the sale-type pill.
+  root.appendChild(
+    buildHeaderStrip(state, allCustomers, (kind) => {
+      if (kind === 'cash') setSaleType('cash');
+      else if (kind === 'credit') setSaleType('credit');
+    }),
+  );
 
   // Items table
   const itemsHost = h('div');
@@ -503,7 +509,7 @@ export async function renderNew(root) {
   }
 }
 
-function buildHeaderStrip(state, customers, onChange) {
+function buildHeaderStrip(state, customers, onPartyKind) {
   const wrap = h('div', { class: 'card', style: { padding: '12px' } }, []);
   wrap.appendChild(
     h('div', { class: 'field' }, [
@@ -513,15 +519,26 @@ function buildHeaderStrip(state, customers, onChange) {
         {
           id: 's-party',
           onchange: (e) => {
-            const id = Number(e.target.value);
-            if (!id) {
+            const v = e.target.value;
+            if (v === '__cash__' || v === '') {
               state.partyId = null;
-              state.partyName = '';
+              state.partyName = 'Cash';
               state.partyGstin = '';
               state.partyAddress = '';
               state.partyPhone = '';
+              onPartyKind?.('cash');
               return;
             }
+            if (v === '__credit__') {
+              state.partyId = null;
+              state.partyName = 'Credit';
+              state.partyGstin = '';
+              state.partyAddress = '';
+              state.partyPhone = '';
+              onPartyKind?.('credit');
+              return;
+            }
+            const id = Number(v);
             const p = customers.find((x) => x.id === id);
             if (!p) return;
             state.partyId = p.id;
@@ -534,10 +551,12 @@ function buildHeaderStrip(state, customers, onChange) {
               const psInput = document.getElementById('s-pos');
               if (psInput) psInput.value = p.stateCode;
             }
+            onPartyKind?.('named');
           },
         },
         [
-          h('option', { value: '' }, t('sale.cashCustomer')),
+          h('option', { value: '__cash__' }, '💵 ' + t('sale.cashCustomer')),
+          h('option', { value: '__credit__' }, '📒 ' + t('sale.creditCustomer')),
           ...customers.map((c) =>
             h('option', { value: c.id }, c.name + (c.phone ? ' · ' + c.phone : '')),
           ),

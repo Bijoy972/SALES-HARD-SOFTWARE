@@ -1,7 +1,8 @@
-// Save a PDF/JSON blob and offer it via the Android share sheet.
-// On Android, Capacitor's Share.share({ files: [...] }) routes the file:// URI
-// through FileProvider automatically, avoiding FileUriExposedException.
-// Writes go to the Cache directory so no storage permission is required.
+// Save a blob to device storage and offer it via the Android share sheet.
+// Tries Directory.External first (always covered by FileProvider's
+// <external-files-path>), then Cache, then Documents. If Share.share fails,
+// retries with the `url` parameter, and on terminal failure throws an error
+// that includes the saved file path so the user can still find the PDF.
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -19,26 +20,64 @@ function blobToBase64(blob) {
   });
 }
 
-export async function saveAndShareBlob(blob, filename, dialogTitle = 'Share') {
-  if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
-    const data = await blobToBase64(blob);
-    const writeRes = await Filesystem.writeFile({
-      path: filename,
-      data,
-      directory: Directory.Cache,
-      recursive: true,
+function sanitize(name) {
+  return String(name || 'file').replace(/[^a-zA-Z0-9._-]+/g, '_');
+}
+
+async function nativeShare(blob, filename, dialogTitle) {
+  const data = await blobToBase64(blob);
+  const safeName = sanitize(filename);
+
+  const dirsToTry = [Directory.External, Directory.Cache, Directory.Documents];
+  let writeRes = null;
+  let lastErr = null;
+  for (const dir of dirsToTry) {
+    try {
+      writeRes = await Filesystem.writeFile({
+        path: safeName,
+        data,
+        directory: dir,
+        recursive: true,
+      });
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!writeRes) {
+    throw new Error('Could not save file: ' + (lastErr?.message || lastErr));
+  }
+
+  try {
+    await Share.share({
+      title: dialogTitle,
+      dialogTitle,
+      files: [writeRes.uri],
     });
+    return writeRes.uri;
+  } catch (e) {
+    const msg = String(e?.message || e || '');
+    if (/cancel/i.test(msg)) return writeRes.uri;
     try {
       await Share.share({
         title: dialogTitle,
         dialogTitle,
-        files: [writeRes.uri],
+        url: writeRes.uri,
       });
-    } catch (e) {
-      const msg = String(e?.message || e || '');
-      if (!/cancel/i.test(msg)) throw e;
+      return writeRes.uri;
+    } catch (e2) {
+      const msg2 = String(e2?.message || e2 || '');
+      if (/cancel/i.test(msg2)) return writeRes.uri;
+      throw new Error(
+        'Saved to ' + writeRes.uri + ' but share failed: ' + (e2.message || e2),
+      );
     }
-    return writeRes.uri;
+  }
+}
+
+export async function saveAndShareBlob(blob, filename, dialogTitle = 'Share') {
+  if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+    return nativeShare(blob, filename, dialogTitle);
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
