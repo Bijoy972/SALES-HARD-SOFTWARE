@@ -14,12 +14,21 @@ async function loadPdfMake() {
       import('pdfmake/build/vfs_fonts'),
     ]);
     DBG('pdfmake: imported, has .vfs=' + !!pdfMake.vfs + ' fontsMod keys=' + Object.keys(fontsMod || {}).join(','));
-    const vfs =
-      pdfMake.vfs ||
-      fontsMod.pdfMake?.vfs ||
-      fontsMod.default?.pdfMake?.vfs ||
-      fontsMod.default?.vfs ||
-      null;
+    const candidates = [
+      pdfMake.vfs,
+      fontsMod && fontsMod.default,
+      fontsMod,
+      fontsMod && fontsMod.pdfMake && fontsMod.pdfMake.vfs,
+      fontsMod && fontsMod.default && fontsMod.default.pdfMake && fontsMod.default.pdfMake.vfs,
+      fontsMod && fontsMod.default && fontsMod.default.vfs,
+    ];
+    let vfs = null;
+    for (const cand of candidates) {
+      if (cand && typeof cand === 'object' && cand['Roboto-Regular.ttf']) {
+        vfs = cand;
+        break;
+      }
+    }
     DBG('pdfmake: vfs resolved=' + !!vfs + (vfs ? ' keys#=' + Object.keys(vfs).length : ''));
     if (vfs) pdfMake.vfs = vfs;
     return pdfMake;
